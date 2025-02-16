@@ -27,7 +27,8 @@ locals {
       {
         for k, v in module.automation-service-accounts :
         k => v.iam_email
-      }
+      },
+      # module.service-accounts are excluded here, as adding them here results in dependency cycles
     )
   }
 }
@@ -93,7 +94,11 @@ module "projects" {
       )
       network_users = [
         for v in try(each.value.shared_vpc_service_config.network_users, []) :
-        lookup(local.context.iam_principals, v, v)
+        try(
+          local.context.iam_principals["${each.key}/${v}"],
+          local.context.iam_principals[v],
+          v
+        )
       ]
       # TODO: network subnet users
     })
@@ -123,7 +128,9 @@ module "projects-iam" {
         module.service-accounts["${each.key}/${vv}"].iam_email,
         # automation service account
         local.context.iam_principals["${each.key}/${vv}"],
-        # other context
+        # other projects service accounts
+        module.service-accounts[vv].iam_email,
+        # other automation service account
         local.context.iam_principals[vv],
         # passthrough
         vv
@@ -138,7 +145,9 @@ module "projects-iam" {
           module.service-accounts["${each.key}/${vv}"].iam_email,
           # automation service account
           local.context.iam_principals["${each.key}/${vv}"],
-          # other context
+          # other projects service accounts
+          module.service-accounts[vv].iam_email,
+          # other automation service account
           local.context.iam_principals[vv],
           # passthrough
           vv
@@ -153,7 +162,9 @@ module "projects-iam" {
         module.service-accounts["${each.key}/${v.member}"].iam_email,
         # automation service account
         local.context.iam_principals["${each.key}/${v.member}"],
-        # other context
+        # other projects service accounts
+        module.service-accounts[v.member].iam_email,
+        # other automation service account
         local.context.iam_principals[v.member],
         # passthrough
         v.member
@@ -176,8 +187,15 @@ module "buckets" {
   iam = {
     for k, v in each.value.iam : k => [
       for vv in v : try(
+        # project service accounts
         module.service-accounts["${each.value.project}/${vv}"].iam_email,
-        var.factories_config.context.iam_principals[vv],
+        # automation service account
+        local.context.iam_principals["${each.value.project}/${vv}"],
+        # other projects service accounts
+        module.service-accounts[vv].iam_email,
+        # other automation service account
+        local.context.iam_principals[vv],
+        # passthrough
         vv
       )
     ]
@@ -186,8 +204,15 @@ module "buckets" {
     for k, v in each.value.iam_bindings : k => merge(v, {
       members = [
         for vv in v.members : try(
+          # project service accounts
           module.service-accounts["${each.value.project}/${vv}"].iam_email,
-          var.factories_config.context.iam_principals[vv],
+          # automation service account
+          local.context.iam_principals["${each.value.project}/${vv}"],
+          # other projects service accounts
+          module.service-accounts[vv].iam_email,
+          # other automation service account
+          local.context.iam_principals[vv],
+          # passthrough
           vv
         )
       ]
@@ -196,8 +221,15 @@ module "buckets" {
   iam_bindings_additive = {
     for k, v in each.value.iam_bindings_additive : k => merge(v, {
       member = try(
+        # project service accounts
         module.service-accounts["${each.value.project}/${v.member}"].iam_email,
-        var.factories_config.context.iam_principals[v.member],
+        # automation service account
+        local.context.iam_principals["${each.value.project}/${v.member}"],
+        # other projects service accounts
+        module.service-accounts[v.member].iam_email,
+        # other automation service account
+        local.context.iam_principals[v.member],
+        # passthrough
         v.member
       )
     })
